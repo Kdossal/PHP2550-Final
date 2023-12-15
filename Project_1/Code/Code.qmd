@@ -1,0 +1,782 @@
+---
+title: "PHP 2550: Project 1"
+subtitle: "Due: October 8th at 11:59pm"
+format: pdf
+editor: visual
+geometry: "left=3cm,right=3cm,top=3cm,bottom=3cm"
+---
+
+# Code
+
+```{r}
+library(tidyverse)
+
+# first process child data
+setwd("C:/Classes/PHP 2550/project1")
+child_df <- read.csv("K01BB.csv")
+
+child_df <- child_df %>%
+  select(c(participant_id:su_interview_complete))  %>%
+  filter(redcap_event_name == "child_baseline_arm_1")
+
+# select demographic variables
+child_df <- child_df %>% 
+  select(-c(participant_id, part, lastgrade, redcap_event_name, famid, 
+            visit_date, time, redcap_survey_identifier, enroll_timestamp, 
+            handednesst, tgender, sexorient, whichlang, nativelang, traceoth,
+            usborn, relation, guardian, livewith___0:livewith___7, 
+            attendance, demographics_complete, langpref, pacemaker, 
+            longlive)) %>%
+  rename(taian = trace___0, tasian = trace___1, tnhpi = trace___2, 
+         tblack = trace___3, twhite = trace___4, trace_other = trace___5)
+
+# drop brief because scoring difficult
+child_df <- child_df %>%
+  select(-c(brief_ysr_timestamp:brief_ysr_complete))
+
+# cigarette usage summarize
+child_df <- child_df %>%
+  mutate(cig_ever = suc1, num_cigs_30 = suc11) %>%
+  select(-c(suc1:honc10))
+
+# e-cig usage summarize
+child_df <- child_df %>%
+  mutate(e_cig_ever = ecig1, num_e_cigs_30 = ecig4) %>%
+  select(-c(ecig1:ehonc10))
+
+# marijuana usage summarize
+child_df <- child_df %>%
+  mutate(mj_ever = mj1, num_mj_30 = mj8) %>%
+  select(-c(mj1:mpi29))
+
+# alchohol usage summarize
+child_df <- child_df %>%
+  mutate(alc_ever = alc2, num_alc_30 = alc7) %>%
+  select(-c(alc1:alcsus3))
+
+# other drugs and norms - dropping 
+child_df <- child_df %>%
+  select(-c(odrg1:othdrglist,
+            perceived_norms_peers_timestamp:perceived_norms_peers_complete,
+            substance_use_cigarettes_timesta:substance_use_other_drug_use_com))
+
+# brief problem monitor scoring
+child_df <- child_df %>%
+  mutate(bpm_att = rowSums(dplyr::select(., c(bpm1,bpm3,bpm4,bpm5,bpm10))),
+         bpm_ext = rowSums(dplyr::select(., c(bpm2,bpm6,bpm7,bpm8,bpm15,
+                                              bpm16,bpm17))),
+         bpm_int = rowSums(dplyr::select(., c(bpm9,bpm11,bpm12,bpm13,bpm18,
+                                              bpm19)))) %>%
+  select(-c(brief_problem_monitor_timestamp:brief_problem_monitor_complete))
+
+# emotional regulation
+child_df <- child_df %>%
+  mutate(erq_cog = rowMeans(dplyr::select(., c(erq1,erq3,erq5,erq7,
+                                                 erq8,erq10))),
+         erq_exp = rowMeans(dplyr::select(., c(erq2,erq4,erq6,
+                                                 erq9)))) %>%
+  select(-c(emotion_regulation_questionnaire:emotion_regulation_questionnair1))
+
+# physical - dropping for the purpose of this research
+child_df <- child_df %>%
+  select(-c(physical_development_scale_ysr_t:physical_development_scale_ysr_c,
+            height1:body_measurements_complete))
+
+# life stress - dropping for the purpose of this research
+child_df <- child_df %>%
+  select(-c(life_stress_ysr_timestamp:life_stress_ysr_complete))
+
+# parental monitoring scoring
+child_df <- child_df %>%
+  mutate(pmq_parental_knowledge = (pmq1+pmq2+pmq3+pmq4+pmq5+pmq6+
+                                     pmq7+pmq8+(5-pmq9))/9,
+         pmq_child_disclosure = (pmqcd1+pmqcd2+(5-pmqcd3)+(5-pmqcd4)+pmqcd5)/5,
+         pmq_parental_solicitation = rowMeans(dplyr::select(., pmqps1:pmqps5)),
+         pmq_parental_control = rowMeans(dplyr::select(., pmqpc1:pmqpc5))) %>%
+  select(-c(parental_monitoring_questionnair:parental_monitoring_questionnai1))
+
+# dysregulation - drop to simplify analysis
+child_df <- child_df %>%
+  select(-c(dysregulation_inventory_ysr_time:dysregulation_inventory_ysr_comp))
+
+# early adolescent temperament - drop to simplify analysis
+child_df <- child_df %>%
+  select(-c(early_adolescent_temperament_que:early_adolescent_temperament_qu1))
+
+# alcohol and substance abuse - too few observed so remove
+child_df <- child_df %>%
+  select(-c(miniaud1:minikid_sud_2_complete))
+
+# remove remaining diet questions for purposes of this research
+child_df <- child_df %>%
+  select(-c(intuitive_eating_scale_timestamp:su_interview_complete))
+
+# parent df
+parent_df <- read.csv("K01BB.csv") %>%
+  filter(redcap_event_name == "parent_baseline_arm_2") %>%
+  select(c(parent_id, page:chart23)) 
+
+# demographics
+parent_df <- parent_df %>%
+  select(-c(pgender, marstat, handednessp, plang1:plang3,
+            praceoth, ppacemaker, pusa, pedu1:pedu3,
+            prelation:parent_demographics_complete, govtasst___0:govtasst___5,
+            parent_demographics_asd_timestam, 
+            parent_demographics_asd_complete)) %>%
+  rename(paian = prace___0, pasian = prace___1, pnhpi = prace___2, 
+         pblack = prace___3, pwhite = prace___4, prace_other = prace___5)
+
+# brief - dropping for difficulty scoring
+parent_df <- parent_df %>%
+  select(-c(brief_p_on_c_timestamp:brief_p_on_c_complete))
+
+# swan - p on c
+parent_df <- parent_df %>%
+  mutate(swan_inattentive = rowSums(dplyr::select(., swan1:swan9), 
+                                    na.rm=TRUE),
+         swan_hyperactive = rowSums(dplyr::select(., swan10:swan18), 
+                                    na.rm=TRUE)) %>%
+  select(-c(swan_p_on_c_timestamp:swan_p_on_c_complete))
+
+# connors - drop because swan will be similar
+parent_df <- parent_df %>%
+  select(-c(connors_p_on_c_timestamp:connors_p_on_c_complete))
+
+# pbpm - parent answering about child
+parent_df <- parent_df %>%
+  mutate(bpm_att_p = rowSums(dplyr::select(., c(pbpm1,pbpm3,pbpm4,pbpm5,pbpm10))),
+         bpm_ext_p = rowSums(dplyr::select(., c(pbpm2,pbpm6,pbpm7,pbpm8,pbpm15,
+                                              pbpm16,pbpm17))),
+         bpm_int_p = rowSums(dplyr::select(., c(pbpm9,pbpm11,pbpm12,pbpm13,pbpm18,
+                                              pbpm19)))) %>%
+  select(-c(bpm_p_on_c_timestamp:bpm_p_on_c_complete))
+
+# alc and drug use
+parent_df <- parent_df %>%
+  mutate(magic2 = ifelse(magic1 == 0, 0, magic2),
+         magic5 = ifelse(magic4 == 0, 0, magic5),
+         smoke_exposure_6mo = max(magic2, magic5),
+         magic8 = ifelse(magic7 == 0, 0, magic8),
+         magic11 = ifelse(magic10 == 0, 0, magic11),
+         smoke_exposure_12mo = max(magic8, magic11),
+         magic14 = ifelse(magic13 == 0, 0, magic14),
+         magic17 = ifelse(magic16 == 0, 0, magic17),
+         smoke_exposure_2yr = max(magic14, magic17),
+         magic20 = ifelse(magic19 == 0, 0, magic20),
+         magic23 = ifelse(magic22 == 0, 0, magic23),
+         smoke_exposure_3yr = max(magic20, magic23),
+         magic26 = ifelse(magic25 == 0, 0, magic26),
+         magic29 = ifelse(magic28 == 0, 0, magic29),
+         smoke_exposure_4yr = max(magic26, magic29),
+         magic32 = ifelse(magic31 == 0, 0, magic32),
+         magic35 = ifelse(magic34 == 0, 0, magic35),
+         smoke_exposure_5yr = max(magic32, magic35)
+          ) %>%
+  select(-c(nidaliftetime___1:inject,penncig2:penn_state_ecigarette_dependenc1,
+           penn_state_cigarette_dependence_, 
+           nida_quick_screen_timestamp,
+           nida_quick_screen_complete, magic_timestamp:magic_complete)) %>%
+  rename(mom_numcig = penncig1)
+    
+         
+
+# brief - dropping because difficulty scoring
+parent_df <- parent_df %>%
+  select(-c(briefa_timestamp:briefa_complete))
+
+# parental monitoring - parent answering on child
+parent_df <- parent_df %>%
+  mutate(ppmq_parental_knowledge = (ppmq1+ppmq2+ppmq3+ppmq4+ppmq5+ppmq6+
+                                     ppmq7+ppmq8+(5-ppmq9))/9,
+         ppmq_child_disclosure = (ppmqcd1+ppmqcd2+(5-ppmqcd3)+(5-ppmqcd4)
+                                  +ppmqcd5)/5,
+         ppmq_parental_solicitation = rowMeans(dplyr::select(., ppmqps1:ppmqps5)),
+         ppmq_parental_control = rowMeans(dplyr::select(., ppmqpc1:ppmqpc5))) %>%
+  select(-c(ppmq1:ppmqps5,parental_monitoring_questionnai2,
+            parental_monitoring_questionnai3))
+
+# chaos - dropping for purposes of this research
+parent_df <- parent_df %>%
+  select(-c(chaos_timestamp:chaos_complete))
+
+# bpm adult
+parent_df <- parent_df %>%
+  mutate(bpm_att_a = rowSums(dplyr::select(., c(abpm1,abpm6,abpm7,abpm8,abpm9,
+                                                abpm12))),
+         bpm_ext_a = rowSums(dplyr::select(., c(abpm3,abpm13,abpm14,abpm17,
+                                                abpm18))),
+         bpm_int_a = rowSums(dplyr::select(., c(abpm2,abpm4,abpm5,abpm10,abpm15,
+                                              abpm16)))) %>%
+  select(-c(brief_problem_monitoradult_times:brief_problem_monitoradult_compl))
+
+# parent emotional regulation 
+parent_df <- parent_df %>%
+  mutate(erq_cog_a = rowMeans(dplyr::select(., c(perq1,perq3,perq5,perq7,
+                                                 perq8,perq10))),
+         erq_exp_a = rowMeans(dplyr::select(., c(perq2,perq4,perq6,
+                                                 perq9)))) %>%
+  select(-c(emotion_regulation_questionnair2:emotion_regulation_questionnair3))
+
+# adult temperament - drop to simplify analysis
+parent_df <- parent_df %>%
+  select(-c(adult_temperament_questionnaire_:adult_temperament_questionnaire1))
+
+# etq - drop to simplify analysis
+parent_df <- parent_df %>%
+  select(-c(eatq_p_on_c_timestamp:eatq_p_on_c_complete))
+
+# stress - dropping for purposes of this research
+parent_df <- parent_df %>%
+  select(-c(nih_toolbox_stress_timestamp:teen_birthday_complete))
+
+# reported smoking during pregnancy and postpartum
+parent_df <- parent_df %>% 
+  select(-c(BBID:ethn2, bl_6:bl_280, s2_10:s2_280, s3_6:s3_280, 
+            s4_6:s4_280,  s5_6:s5_280, s6_6:s6_280, s7_6:s7_280, 
+            chart21A:chart23) )   %>%
+  rename(mom_smoke_16wk = bl_5,
+         mom_smoke_22wk = s2_5, 
+         mom_smoke_32wk = s3_5,
+         mom_smoke_pp1 = s4_5,
+         mom_smoke_pp2 = s5_5,
+         mom_smoke_pp12wk = s6_5,
+         mom_smoke_pp6mo = s7_5,
+         cotimean_34wk = wk34cot_cotimean,
+         cotimean_pp6mo = mo6momcot_cotimean,
+         cotimean_pp6mo_baby = mo6babcot_cotimean)
+
+
+new_df <- inner_join(parent_df, child_df, by = "parent_id")
+write.csv(new_df, "project1.csv", row.names=FALSE)
+```
+
+```{r}
+# Loading in data and Libraries
+library(tidyverse)
+library(purrr)
+library(broom)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(summarytools)
+library(reshape2)
+library(gtsummary)
+
+df <- read.csv("Data/project1.csv")
+child_df <- df
+```
+
+```{r}
+### Cleaning income
+
+# 1. Handle the mistypo
+child_df$income[child_df$income == "760"] <- "76000"
+
+# 2. Remove commas
+child_df$income <- gsub(",", "", child_df$income)
+
+# 3. Convert empty strings to NA
+child_df$income[child_df$income == ""] <- NA
+
+# 4. Convert the character column to numeric
+child_df$income <- as.numeric(child_df$income)
+
+### Cleaning mom_numcig
+
+# 1. Replace "None" with "0"
+child_df$mom_numcig[child_df$mom_numcig == "None"] <- "0"
+
+# 2. Handle the range "20-25"
+child_df$mom_numcig[child_df$mom_numcig == "20-25"] <- "22"
+
+# 3. Convert "2 black and miles a day" to "2"
+child_df$mom_numcig[grep("black and miles", child_df$mom_numcig)] <- "2"
+
+# 4. Handle the value "44989"
+child_df$mom_numcig[child_df$mom_numcig == "44989"] <- NA
+
+# 5. Convert the character column to numeric after replacing empty strings with NA
+child_df$mom_numcig[child_df$mom_numcig == ""] <- NA
+child_df$mom_numcig <- as.numeric(child_df$mom_numcig)
+
+### Convert columns to Binary 0/1
+columns_to_convert <- c("mom_smoke_16wk", "mom_smoke_22wk", 
+                        "mom_smoke_32wk","mom_smoke_pp1", "mom_smoke_pp2", 
+                        "mom_smoke_pp12wk", "mom_smoke_pp6mo")
+
+for (column in columns_to_convert) {
+  child_df[[column]][child_df[[column]] == "1=Yes"] <- 1
+  child_df[[column]][child_df[[column]] == "2=No"] <- 0
+  
+  # Convert column to numeric
+  child_df[[column]] <- as.numeric(child_df[[column]])
+}
+
+### Fill in 30 days previous columns
+sub_ever <- c("cig_ever", "e_cig_ever", "mj_ever", "alc_ever")
+sub_30 <- c('num_cigs_30', 'num_e_cigs_30', 'num_mj_30', 'num_alc_30')
+
+# Loop over each substance
+for (i in 1:4) {
+  
+  # Set the number column to 0 where the ever column is NA or 0
+  child_df[is.na(child_df[[sub_ever[i]]]) | 
+             child_df[[sub_ever[i]]] == 0, sub_30[i]] <- 0
+}
+
+# Clean SWAN variables, when both tests have scores of 0, these should be NA
+child_df$swan_hyperactive[with(df, swan_hyperactive == 0 & 
+                                 swan_inattentive == 0)] <- NA
+child_df$swan_inattentive[with(df, swan_hyperactive == 0 & 
+                                 swan_inattentive == 0)] <- NA
+
+# Replace prefer not to answer with NA
+child_df$tethnic[child_df$tethnic == 2] <- NA
+```
+
+```{r}
+# Cleaning Race column from several binary indicator variables to one prace
+# and trace variable (accounts for ind. indicating multiple races by 
+# grouping them into biracial)
+
+# Change prace columns
+child_df <- child_df %>%
+  mutate(
+    race_count = rowSums(select(., 
+                                paian, pasian, pnhpi, pblack, pwhite, 
+                                prace_other), na.rm = TRUE), 
+    p_race = case_when(
+      race_count > 1 ~ "Biracial/Multiracial",
+      paian == 1 ~ "AIAN",
+      pasian == 1 ~ "Asian",
+      pnhpi == 1 ~ "NHPI",
+      pblack == 1 ~ "Black",
+      pwhite == 1 ~ "White",
+      prace_other == 1 ~ "Other",
+      TRUE ~ NA_character_  # default case when all 0
+    )
+  ) %>%
+  select(-race_count) # remove the temporary race_count column
+
+# Change trace columns
+child_df <- child_df %>%
+  mutate(
+    race_count = rowSums(select(., 
+                                taian, tasian, tnhpi, tblack, twhite, 
+                                trace_other), na.rm = TRUE), 
+    t_race = case_when(
+      race_count > 1 ~ "Biracial/Multiracial",
+      taian == 1 ~ "AIAN",
+      tasian == 1 ~ "Asian",
+      tnhpi == 1 ~ "NHPI",
+      tblack == 1 ~ "Black",
+      twhite == 1 ~ "White",
+      trace_other == 1 ~ "Other",
+      TRUE ~ NA_character_  # default case when all 0
+    )
+  ) %>%
+  select(-race_count) # remove the temporary race_count column
+```
+
+```{r}
+# Generating Missing data table
+missing <- child_df %>%
+  summarise(
+    N = colSums(is.na(child_df)),
+    prop = round(colMeans(is.na(child_df))*100, 2)) %>%
+  mutate(Variables = colnames(child_df)) %>%
+  arrange(desc(prop)) %>%
+  filter(prop > 25) %>%
+  as.data.frame()
+
+
+kable(missing[c(3,2,1)], 
+      caption ='Variables with More Than 25% Missing Data',
+      col.names = c("Variable","Proportion (%)", "n")) %>%
+  kable_styling(bootstrap_options = c("hover"), full_width = F) %>%
+  row_spec(0, background = "#333333", color = "white")  %>%
+  row_spec(6:8, background = "lightpink", color = "black") %>%
+  row_spec(9:17, background = "lightblue", color = "black")
+```
+
+```{r}
+# Extract outcome variables
+outcomes <- child_df %>%
+                  select(swan_hyperactive, swan_inattentive, bpm_att,
+                      bpm_att_p, bpm_ext, bpm_ext_p, bpm_int, 
+                      bpm_int_p, erq_cog, erq_exp)
+
+# Compute correlation matrix
+cor_matrix <- cor(outcomes, use = "complete.obs")
+
+# Melt the correlation matrix for ggplot
+cor_df <- melt(cor_matrix) 
+
+# Corr Matrix for Outcomes
+ggplot(data = cor_df, aes(x = Var1, y = Var2)) + 
+  geom_tile(aes(fill = value), color = "white") + 
+  geom_text(aes(label = sprintf("%.2f", value)), size = 1.8) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 10, hjust = 1),
+        axis.text.y = element_text(size = 10)) +
+  coord_fixed() +
+  labs(x = NULL, y = NULL, title=
+         "Correlation Matrix for Outcome Variables") 
+```
+
+```{r}
+# Summary Table for Outcome Variables
+summary_table <- outcomes %>%
+  summarise(
+    Missing = round(colSums(is.na(.)/nrow(.)), 2) * 100,
+    Mean = round(colMeans(outcomes,na.rm=TRUE), 2),
+    SD = round(apply(outcomes, 2, sd, na.rm = TRUE), 2),
+    Min = round(apply(outcomes, 2, min, na.rm=TRUE), 2),
+    Max = round(apply(outcomes, 2, max, na.rm=TRUE), 2),
+    var = colnames(outcomes)
+  )
+
+summary_table[,c(6,2,3,4,5,1)] %>%
+  mutate() %>%
+  mutate_all(linebreak) %>%
+  kbl(caption = "Outcome Variables Summary Statistics",
+  col.names = linebreak(c("Variable", "Mean", "SD", 
+                          "Min","Max", 'Missing %')),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(full_width = FALSE, 
+                latex_options = c('hold_position'),
+                font_size = 14) %>%
+  row_spec(0, background = "#333333", color = "white")
+```
+
+```{r}
+# mom_smoke_pp6mo and smoke_exposure_6mo both measure the same thing (smoking 6 months post-p)
+smoke_exposure_6mo <- with(child_df, ifelse(!is.na(mom_smoke_pp6mo) & 
+                                mom_smoke_pp6mo == 1 |
+                      !is.na(smoke_exposure_6mo) & 
+                        smoke_exposure_6mo == 1, 
+                      1, 
+                      coalesce(mom_smoke_pp6mo, smoke_exposure_6mo, NA))
+             )
+
+
+# Extract sdp/ets variables
+ind_vars <- child_df %>%
+                  select(mom_smoke_16wk, mom_smoke_22wk, mom_smoke_32wk,
+                         cotimean_34wk, mom_smoke_pp1, mom_smoke_pp2,
+                         mom_smoke_pp12wk, cotimean_pp6mo,
+                         cotimean_pp6mo_baby, smoke_exposure_6mo,
+                         smoke_exposure_12mo, smoke_exposure_2yr,
+                         smoke_exposure_3yr, smoke_exposure_4yr,
+                         smoke_exposure_5yr)
+
+# Compute correlation matrix
+cor_matrix <- cor(ind_vars, use = "pairwise.complete.obs")
+
+# Melt the correlation matrix for ggplot
+cor_df <- melt(cor_matrix)
+
+# Correlation Matrix for exposure variables
+ggplot(data = cor_df, aes(x = Var1, y = Var2)) + 
+  geom_tile(aes(fill = value), color = "white") +
+  geom_text(aes(label = sprintf("%.2f", value)), size = 1.6) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 9, hjust = 1),
+        axis.text.y = element_text(size = 10)) +
+  coord_fixed() +
+  labs(x = NULL, y = NULL, title=
+         "Correlation Matrix for Exposure Variables") 
+```
+
+```{r}
+# Identify continuous and binary variables
+continuous_vars <- c("cotimean_34wk", "cotimean_pp6mo_baby", "cotimean_pp6mo")
+binary_vars <- setdiff(names(ind_vars), continuous_vars)
+
+# Summary for continuous variables
+continuous_summary <- ind_vars %>%
+  select(all_of(continuous_vars)) %>%
+  summarise(
+    var = colnames(.),
+    Mean = round(colMeans(., na.rm = TRUE), 2),
+    SD = round(apply(., 2, sd, na.rm = TRUE), 2),
+    Min = round(apply(., 2, min, na.rm = TRUE), 2),
+    Max = round(apply(., 2, max, na.rm = TRUE), 2),
+    Missing = round(colSums(is.na(.)/nrow(.)), 2) * 100
+  )
+
+# Summary for binary variables
+binary_summary <- ind_vars %>%
+  select(all_of(binary_vars)) %>%
+  summarise(
+    var = colnames(.),
+    Zero = colSums(. == 0, na.rm = TRUE),
+    One = colSums(. == 1, na.rm = TRUE),
+    Missing = round(colSums(is.na(.)/nrow(.)), 2) * 100
+  )
+
+# Summary table for binary exposure variables
+binary_summary %>%
+  mutate() %>%
+  mutate_all(linebreak) %>%
+  kbl(caption = "ETS/SDP Exposure Summary Statistics",
+  col.names = linebreak(c("Variable","Yes", "No", "Missing %")),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(full_width = FALSE, 
+                latex_options = c('hold_position'),
+                font_size = 14) %>%
+  row_spec(0, background = "#333333", color = "white")
+
+# Summary table for continuous exposure variables
+continuous_summary %>%
+  mutate() %>%
+  mutate_all(linebreak) %>%
+  kbl(caption = "Cotinine Variable Summary Statistics",
+  col.names = linebreak(c("Variable", "Mean", "SD", 
+                          "Min", "Max", "Missing %")),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(full_width = FALSE, 
+                latex_options = c('hold_position'),
+                font_size = 14) %>%
+  row_spec(0, background = "#333333", color = "white")
+
+
+# Child with parent_id == 54702 removed because their cotimean_pp6mo and
+# cotimean_pp6mo_baby amounts were twice that of the second highest, this 
+# child also had missing data for variables associated with swan, bpm, 
+# postnatal smoke exosure, and substance use
+child_df <- child_df[child_df$parent_id != 54702,]
+```
+
+```{r}
+##### Creating Composite Variables ####
+
+### Exposure Variables (ETS/SDP)
+
+# Applying a log transformation (after adding a constant to handle zeros)
+cotimean_34wk_log <- log1p(child_df$cotimean_34wk)
+cotimean_pp6mo_baby_log <- log1p(child_df$cotimean_pp6mo_baby)
+cotimean_pp6mo_log <- log1p(child_df$cotimean_pp6mo)
+
+# Z-score normalization of Contimean Variables
+cotimean_34wk_z <- scale(child_df$cotimean_34wk)[,1]
+cotimean_pp6mo_baby_z <- scale(child_df$cotimean_pp6mo_baby)[,1]
+cotimean_pp6mo_z <- scale(child_df$cotimean_pp6mo)[,1]
+
+# Shift by the absolute min value to ensure all values are non-negative
+shifted_34wk <- cotimean_34wk_z + abs(min(cotimean_34wk_z, na.rm=TRUE))
+baby_shifted <- cotimean_pp6mo_baby_z + 
+  abs(min(cotimean_pp6mo_baby_z, na.rm=TRUE))
+shifted <- cotimean_pp6mo_z + abs(min(cotimean_pp6mo_z, na.rm=TRUE))
+
+# Create Composite SDP Variable using Gestational Data
+child_df$SDP <- with(child_df, rowMeans(
+  cbind(mom_smoke_16wk, mom_smoke_22wk, 
+        mom_smoke_32wk, shifted_34wk), na.rm=TRUE))
+
+child_df$SDP_lvl <- ifelse(child_df$SDP < .5, 0, 1)
+
+# Create Composite ETS Variable using Postpartum Data
+child_df$ETS <- with(child_df, 
+                     rowMeans(cbind(baby_shifted, shifted,
+                            mom_smoke_pp1, mom_smoke_pp2, mom_smoke_pp12wk, 
+                            smoke_exposure_6mo, smoke_exposure_12mo,
+                            smoke_exposure_2yr, smoke_exposure_3yr,
+                            smoke_exposure_4yr, smoke_exposure_5yr), 
+                            na.rm=TRUE))
+
+### Outcome Variables
+
+# Calculate the z-scores for the selected variables
+swan_hyperactive_z <- scale(child_df$swan_hyperactive)[,1]
+swan_inattentive_z <- scale(child_df$swan_inattentive)[,1]
+
+bpm_att_z <- scale(child_df$bpm_att)[,1]
+bpm_ext_z <- scale(child_df$bpm_ext)[,1]
+bpm_int_z <- scale(child_df$bpm_int)[,1]
+bpm_ext_p_z <- scale(child_df$bpm_ext_p)[,1]
+bpm_att_p_z <- scale(child_df$bpm_att_p)[,1]
+bpm_int_p_z <- scale(child_df$bpm_int_p)[,1]
+
+erq_cog_z <- scale(child_df$erq_cog)[,1]
+erq_exp_z <- scale(child_df$erq_exp)[,1]
+
+# Calculate the composite externalizing metric
+child_df$EXT <- rowMeans(cbind(
+  swan_hyperactive_z, swan_inattentive_z, bpm_att_z, 
+  bpm_ext_z, bpm_ext_p_z, bpm_att_p_z), na.rm=TRUE)
+
+# Calculate the composite self-regulation metric
+child_df$SR <- rowMeans(cbind(
+  bpm_int_z, bpm_int_p_z, erq_cog_z, erq_exp_z), na.rm=TRUE)
+
+# For Composite Substance Use Variable
+child_df$SU <- with(child_df, 
+                          ifelse(e_cig_ever == 1 | mj_ever == 1 | 
+                                   cig_ever == 1 | alc_ever == 1, 1, 0))
+```
+
+```{r}
+# Scatterplot with regression lines for each SDP_lvl group
+ggplot(child_df, aes(x = SDP, y = ETS)) +
+  geom_point(aes(color = factor(SDP_lvl)), shape = 16, size = 2) +
+  geom_smooth(color='grey', method = "lm", se = FALSE) +
+  scale_color_manual(values = c("lightblue", "pink"), 
+                     name = "SDP Level", 
+                     breaks = c(0, 1),
+                     labels = c("Low", "High")) +
+  theme_minimal() + labs(
+  title = "Interrelatedness of Prenatal and Postnatal Exposure to Smoking",
+    x = "Smoking During Pregnancy (SDP)",
+    y = "Environmental Tobacco Smoke (ETS)"
+  )
+```
+
+```{r}
+# Extract relevant variables
+vars <- child_df %>% select(SDP, ETS, SR, EXT, SU)
+
+# Compute summary statistics for each variable
+summaries <- vars %>%
+  summarise(
+    var = colnames(.),
+    Mean = round(colMeans(.,na.rm=TRUE), 2),
+    SD = round(apply(., 2, sd, na.rm = TRUE), 2),
+    Min = round(apply(., 2, min, na.rm = TRUE), 2),
+    Max = round(apply(., 2, max, na.rm = TRUE), 2),
+    Missing = round(colSums(is.na(.)/nrow(.)), 2) * 100
+  )
+
+# Summary table for composite variables
+summaries %>%
+  mutate() %>%
+  mutate_all(linebreak) %>%
+  kbl(caption = "Composite Variables Summary Statistics",
+  col.names = linebreak(c("Variable", "Mean", "SD", 
+                          "Min","Max", "Missing %")),
+  booktabs = T, escape = T, align = "c") %>%
+  kable_styling(full_width = FALSE, 
+                latex_options = c('hold_position'),
+                font_size = 16) %>%
+  row_spec(0, background = "#333333", color = "white") 
+```
+
+```{r}
+# Compute correlation matrix
+cor_matrix <- cor(vars, use = "complete.obs")
+
+# Melt the correlation matrix for ggplot
+cor_df <- melt(cor_matrix)
+
+# Corr Matrix for composite variables
+ggplot(data = cor_df, aes(x = Var1, y = Var2)) + 
+  geom_tile(aes(fill = value), color = "white") + 
+  geom_text(aes(label = sprintf("%.2f", value)), size = 3) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 10, hjust = 1),
+        axis.text.y = element_text(size = 10)) +
+  coord_fixed() +
+  labs(x = NULL, y = NULL, title=
+         'Composite Variable Correlation Matrix') 
+```
+
+```{r}
+# Demographic Summary Table
+table1 <- child_df %>%
+  select(page, psex, plang, pethnic, p_race, employ, 
+         pedu, income, tage, language, tethnic, t_race) %>%
+  tbl_summary(
+    by = NULL,
+    type = all_continuous() ~ "continuous2",
+  ) %>%
+  modify_header(label = "**Variables**")
+
+# Print the table
+table1
+```
+
+```{r}
+# Regression model for SR
+model <- lm(SR ~ SDP + ETS + page + pethnic + pwhite + prace_other + 
+              tage + language + tethnic + taian, 
+            data = child_df)
+
+summary(model)
+```
+
+```{r}
+# Regression model for EXT
+model <- lm(EXT ~ SDP + ETS + pethnic + tage + language +
+              taian + tblack, 
+            data = child_df)
+
+summary(model)
+```
+
+```{r}
+# Regression model for SU
+logistic_model_simple <- glm(SU ~ SDP + ETS + pethnic + employ + pedu +
+              income + tage + language + tethnic,
+                             family = "binomial", data = child_df)
+
+summary(logistic_model_simple)
+```
+
+```{r}
+# Plot for SR by ETS/SDP
+ggplot(child_df, aes(x=ETS, y=SR)) + 
+  geom_point(aes(color = factor(SDP_lvl)), shape = 16, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color='grey') +
+  scale_color_manual(values = c("lightblue", "pink"), 
+                     name = "SDP Level", 
+                     breaks = c(0, 1),
+                     labels = c("Low", "High")) +
+    theme_minimal() + labs(
+      title = "Effect of ETS on Self-Regulation by SDP Level",
+      x = "Environmental Tobacco Smoke (ETS)",
+      y = "Self-Regulation Composite Score"
+  )
+```
+
+```{r}
+# Plot for EXT by ETS/SDP
+ggplot(child_df, aes(x=ETS, y=EXT)) + 
+  geom_point(aes(color = factor(SDP_lvl)), shape = 16, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color='grey') +
+  scale_color_manual(values = c("lightblue", "pink"), 
+                     name = "SDP Level", 
+                     breaks = c(0, 1),
+                     labels = c("Low", "High")) +
+    theme_minimal() + labs(
+      title = "Effect of ETS on Externalizing by SDP Level",
+      x = "Environmental Tobacco Smoke (ETS)",
+      y = "Externalizing Composite Score"
+  )
+```
+
+```{r}
+# Plot for SU by ETS/SDP
+ggplot(child_df %>% filter(!is.na(SU)), aes(x=ETS, y=factor(SU), fill = factor(SDP_lvl))) + 
+  geom_boxplot(outlier.shape = NA) + # removes outliers
+  scale_fill_manual(values = c("lightblue", "pink"), 
+                     name = "SDP Level", 
+                     breaks = c(0, 1),
+                     labels = c("Low", "High")) +
+    theme_minimal() + labs(
+      title = "Effect of ETS on Substance Use by SDP Level",
+      x = "Environmental Tobacco Smoke (ETS)",
+      y = "Substance Use (SU)"
+  )
+```
