@@ -1,4 +1,4 @@
-# Practical Data Analysis
+# Practical Data Analysis -- Final Project Portfolio
 
 ## Overview
 This repository is a collection of my work for the PHP2550: Practical Data Analysis course. It compiles the final and updated versions of all three projects over the semester, demonstrating my skills in data analysis, statistical modeling, and collaboration. 
