@@ -1,0 +1,497 @@
+---
+title: "PHP 2550: Project 2 - Code"
+subtitle: "Due: November 12th by 11:59pm"
+format: pdf
+editor: visual
+---
+
+## Code Appendix
+
+```{r}
+# Loading in data and Libraries
+library(tidyverse)
+library(purrr)
+library(broom)
+library(mice)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(summarytools)
+library(glmnet) 
+
+df <- read.csv("C:/Classes/PHP 2550/project2/Data/project2.csv")
+data <- df
+
+### Data Cleaning ###
+
+# Setting Death to be Binary
+data$Death <- ifelse(data$Death == 'Yes', 1, 0)
+
+# Setting predictors to be Binary
+data$prenat_ster <- ifelse(data$prenat_ster == 'Yes', 1, 0)
+data$com_prenat_ster <- ifelse(data$com_prenat_ster == 'Yes', 1, 0)
+data$mat_chorio <- ifelse(data$mat_chorio == 'Yes', 1, 0)
+data$sga <- ifelse(data$sga == 'SGA', 1, 0)
+data$any_surf <- ifelse(data$any_surf == 'Yes', 1, 0)
+
+# Check levels(as.factor(data$gender)), just 'Male' and 'Female'
+# Create binary variable is.male
+data$gender <- ifelse(data$gender == 'Male', 1, 0)
+
+# Factor Variables
+data$mat_race <- as.factor(data$mat_race)
+data$mat_ethn <- as.factor(
+  ifelse(data$mat_ethn == 2, 'Hispanic', 'Not Hispanic'))
+data$center <- as.factor(data$center)
+
+data$ventilation_support_level.36  <- as.factor(
+  ifelse(data$ventilation_support_level.36  == 0, 'None', 
+        ifelse(data$ventilation_support_level.36 == 1, 
+               'Non-Invasive','Invasive')))
+
+data$ventilation_support_level_modified.44 <- as.factor(
+  ifelse(data$ventilation_support_level_modified.44  == 0, 'None', 
+        ifelse(data$ventilation_support_level_modified.44 == 1, 
+               'Non-Invasive','Invasive')))
+
+data$del_method <- as.factor(
+  ifelse(data$del_method == 1, 'Vaginal', 'C-section'))
+
+# Getting rid of exteme minimum for weight at 44 weeks
+# Weight of 3g even though weight at 36 weeks was 2290g
+data$weight_today.44[data$weight_today.44 == 3 & 
+                       !is.na(data$weight_today.44)] <- NA
+
+# Drop 2 observations where Death is NA
+data <- data[!is.na(data$Death),]
+
+# Filling missing center id values 
+# (based on record_id all missing were from center 1)
+data$center[is.na(data$center)] <- 1
+
+# Found record_id 2000824 to have 4 repeats
+# table(data$record_id)[table(data$record_id) > 1]
+data = data[-c(789,790,791),]
+
+# Removing hosp_dc_ga since discharge age would not be known while using this model in practice
+data = data %>% dplyr::select(-"hosp_dc_ga")
+
+# Create simplified outcomes for:
+# A) No Death + No Trach    B) Trach or Death
+
+# This stems from the limited sample size for 'Death Only' (37) 
+# and 'Trach and Death' (17) 
+# while preserving the ability to model the likelihood of tracheostomy.
+data$outcome <- with(data, ifelse(Death == 0 & Trach == 0, 0, 1))
+
+# Dropping record_id since it is not useful
+# Dropping center since although might be important several centers 
+# only have a few samples and this is not usable for the generalizability for predicting at new centers
+# Dropping any_surf because +40% of data is missing and this happens at random without ties to other variables specifically
+# Dropping Death and Trach because we have new outcome variable
+data <- data %>% dplyr::select(
+  -c('mat_race','record_id', 'Death', 'Trach'))
+```
+
+```{r}
+missing <- data %>%
+  summarise(
+    N = colSums(is.na(data)),
+    prop = round(colMeans(is.na(data))*100, 2)) %>%
+  mutate(Variables = colnames(data)) %>%
+  arrange(desc(prop)) %>%
+  filter(prop > 10) %>%
+  as.data.frame()
+
+
+kable(missing[c(3,2,1)], 
+      caption ='Variables with More Than 10% Missing Data',
+      col.names = c("Variable","Proportion (%)", "n")) %>%
+  kable_styling(bootstrap_options = c("hover"), full_width = F) %>%
+  row_spec(0, background = "#333333", color = "white")  %>%
+  row_spec(c(1:4, 6:7), background = "lightpink", color = "black")
+```
+
+```{r}
+library(gtsummary)
+
+# Assuming your dataset is named `df`
+
+# List of continuous variables
+continuous_vars <- c("bw", "ga", "blength", "birth_hc", "weight_today.36", "inspired_oxygen.36", "p_delta.36", "peep_cm_h2o_modified.36", "weight_today.44", "inspired_oxygen.44", "p_delta.44", "peep_cm_h2o_modified.44")
+
+# All other variables (excluding those you don't want and the continuous ones) will be treated as categorical
+categorical_vars <- setdiff(names(data), continuous_vars)
+
+# Create the table
+table1 <- data %>%
+  tbl_summary(
+    by = outcome,
+    label = list(
+      bw = "Birth weight (g)",
+      ga = "Obstetrical gestational age",
+      blength = "Birth length (cm)",
+      birth_hc = "Birth head circumference (cm)",
+      del_method = "Delivery Method",
+      prenat_ster = "Prenatal Corticosteroids",
+      com_prenat_ster = "Complete Prenatal Steroids",
+      mat_chorio = "Maternal Chorioamnionitis",
+      gender = "Male",
+      sga = "SGA",
+      any_surf = "Surfactant",
+      weight_today.36 = "Weight at 36 wks",
+      ventilation_support_level.36 = "Ventilation at 36 wks",
+      inspired_oxygen.36 = "Frac of Inspired Oxygen at 36 wks",
+      p_delta.36 = "Peak Inspiratory Pressure at 36 wks",
+      peep_cm_h2o_modified.36 = "PEEP at 36 wks",
+      med_ph.36 = "Medication for PH at 36 weeks",
+      weight_today.44 = "Weight at 44 wks",
+      ventilation_support_level_modified.44 = "Ventilation at 44 wks",
+      inspired_oxygen.44 = "Frac of Inspired Oxygen at 44 wks",
+      p_delta.44 = "Peak Inspiratory Pressure at 44 wks",
+      peep_cm_h2o_modified.44 = "PEEP at 44 wks",
+      med_ph.44 = "Medication for PH at 44 wks",
+      Death = "Death",
+      mat_ethn = "Maternal Ethnicity"
+    ),
+    statistic = list(
+      all_of(continuous_vars) ~ "{mean} ({sd})",
+      all_of(categorical_vars) ~ "{n} ({p}%)"
+    ),
+    missing = 'no'
+  ) %>%
+  bold_labels()
+
+# Print the table
+table1
+```
+
+```{r}
+library(reshape2)
+# Graphs for interesting variables by trach
+
+# Extract continuous variables
+cont <- data %>% dplyr::select(-c("ventilation_support_level_modified.44",
+                           "ventilation_support_level.36", "del_method",
+                           "mat_ethn", 'prenat_ster', 'com_prenat_ster',
+                           'mat_chorio', 'gender', 'sga', 'any_surf',
+                           'med_ph.36', 'med_ph.44', 'outcome', 'center'))
+
+# Compute correlation matrix
+cor_matrix <- cor(cont, use = "pairwise.complete.obs")
+
+# Melt the correlation matrix for ggplot
+cor_df <- melt(cor_matrix)
+
+ggplot(data = cor_df, aes(x = Var1, y = Var2)) + 
+  geom_tile(aes(fill = value), color = "white") + 
+  geom_text(aes(label = sprintf("%.2f", value)), size = 1.8) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 9, hjust = 1),
+        axis.text.y = element_text(size = 9)) +
+  coord_fixed() +
+  labs(x = "", y = "", title = "Correlation Matrix")
+```
+
+```{r}
+# Calculate proportions
+data$center[data$center == 21] = 20
+
+data %>%
+  group_by(center, outcome) %>%
+  summarise(count = n()) %>%
+  mutate(freq = count / sum(count)) %>%
+  ggplot(aes(x = center, y = freq, fill = as.factor(outcome))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Center", y = "Proportion", fill = "Outcome", title = "Proportion of Outcomes by Center") + 
+  theme_minimal()
+```
+
+```{r}
+# Violin plot for `p_delta.36` vs. Tracheostomy
+ggplot(data, aes(x = factor(outcome), y = p_delta.36, 
+                 fill = factor(outcome))) +
+  geom_violin(trim = TRUE, bw=1, adjust=1.5) +
+  labs(title = 
+         "Distribution of Peak Inspiratory Pressure by Outcome",
+       x = "Outcome",
+       y = "Peak Inspiratory Pressure at 36 weeks") + 
+  theme(legend.position = "none")
+```
+
+```{r}
+# Violin plot for `inspired_oxygen.36` vs. Tracheostomy
+ggplot(data, aes(x = factor(outcome), y = inspired_oxygen.36, 
+                 fill = factor(outcome))) +
+  geom_violin(trim = TRUE,bw=.01, adjust=2) +
+  labs(title = "Distribution of Inspired Oxygen by Outcome",
+       x = "Outcome",
+       y = "Fraction of Inspired Oxygen 36 weeks") + 
+  theme(legend.position = "none")
+```
+
+```{r}
+# Dropping mat_race because of data collection issues
+data <- data %>% dplyr::select(-c('any_surf', 'center'))
+
+# Adjust character variables to numeric factors
+data$del_method <- as.factor(ifelse(data$del_method == 'Vaginal', 0, 1))
+data$mat_ethn <- as.factor(ifelse(data$mat_ethn == 'Hispanic', 1, 0))
+
+data$ventilation_support_level.36  <- as.factor(
+  ifelse(data$ventilation_support_level.36  == 'None', 0,
+        ifelse(data$ventilation_support_level.36 == 'Non-Invasive', 
+               1, 2)))
+
+data$ventilation_support_level_modified.44  <- as.factor(
+  ifelse(data$ventilation_support_level_modified.44  == 'None', 0,
+        ifelse(data$ventilation_support_level_modified.44 == 'Non-Invasive',
+               1, 2)))
+```
+
+```{r}
+# Subset the dataframe to only include the specified variables
+wk44_vars <- c("inspired_oxygen.44", "p_delta.44", "weight_today.44",
+               "peep_cm_h2o_modified.44",
+               "ventilation_support_level_modified.44", "med_ph.44")
+
+selected_vars <- data[wk44_vars]
+
+# Number of NAs in each row for the specified variables
+na_count_per_row <- rowSums(is.na(selected_vars))
+
+# Keep rows where not all of the specified variables are NA
+data_36 <-  data %>% dplyr::select(-c(wk44_vars))
+data <- data[na_count_per_row != ncol(selected_vars), ]
+```
+
+```{r}
+# Imputation model, excluding variables with >= 20% missing
+mice_mod <- mice(data, m = 5, meth = 'pmm', seed = 2550)
+mice_mod_36 <- mice(data_36, m = 5, meth = 'pmm', seed = 2550)
+
+# List of Imputed Set
+data_imp = vector("list",5)
+for (i in 1:5){
+  imp = complete(mice_mod,i)
+  data_imp[[i]] = cbind(imp)
+}
+
+# 36 Week Data
+data_36 = vector("list",5)
+for (i in 1:5){
+  imp = complete(mice_mod_36,i)
+  data_36[[i]] = cbind(imp)
+}
+```
+
+```{r}
+library(glmnet) 
+library(pROC)
+library(MASS)
+library(leaps)
+
+######################################################
+#### Lasso ####
+######################################################
+lasso <- function(X,Y) {
+  #' Runs 10-fold CV for lasso and returns corresponding coefficients
+  #' @param X, matrix for X
+  #' @param Y, outcome vector
+  #' @return coef, coefficients for minimum cv error
+
+  # Generate folds
+  k <- 10
+  set.seed(1) # consistent seeds
+  folds <- sample(1:k, nrow(X), replace=TRUE)
+  
+  # Lasso model
+  lasso_mod <- cv.glmnet(X, Y, nfolds = 10, family = 'binomial',
+                         foldid = folds, alpha = 1)
+  
+  # Refit using lambda.min
+  lasso_mod <- glmnet(X, Y, nfolds = 10, family = 'binomial',
+                         lambda=lasso_mod$lambda.min, alpha = 1)
+  
+  # Get coefficients
+  coef <- coef(lasso_mod)
+  
+  return(as.matrix(coef))
+}
+```
+
+```{r}
+library(leaps)
+library(MASS) # for stepAIC
+
+forward_stepwise <- function(X, Y) {
+  # Runs forward stepwise selection and returns corresponding coefficients
+  # @param X, matrix for X
+  # @param Y, outcome vector
+  # @return coef, coefficients for minimum cv error
+  
+  # combine as one dataframe
+  XY <- data.frame(X, y = as.factor(Y)) # Make sure Y is a factor for logistic regression
+  
+  set.seed(1) # consistent seeds
+  
+  # Define the full model and null model
+  null.model <- glm(y ~ 1, data = XY, family = "binomial")
+  final.model <- glm(y ~ ., data = XY, family = "binomial")
+  
+  # Run Forward Stepwise selection
+  stepwise.final.model <- stepAIC(null.model, scope = list(lower = null.model, upper = final.model), 
+                                  direction = "forward", trace = FALSE)
+  
+  # Get final coefs
+  coef_matrix <- matrix(0, nrow = 1, ncol = ncol(X)+1)
+  colnames(coef_matrix) <- c('(Intercept)',colnames(X))
+  coef_vector <- coef(stepwise.final.model)
+  matched_coefs <- match(names(coef_vector), colnames(coef_matrix))
+  coef_matrix[matched_coefs] <- coef_vector
+  
+  # Return the final coefficients
+  return(t(coef_matrix))
+}
+```
+
+```{r}
+library(caret)
+library(MASS)
+library(pROC)
+library(Metrics)
+library(ModelMetrics)
+
+# Function to perform the entire modeling process for all imputed datasets
+model_data <- function(all_imputations, p) {
+  # Takes in list of data imputed sets (complete) and performs variable
+  # selection and fit 2 Logistic Models: Lasso and Forward Stepwise
+  # @param all_imputations, list of data frames
+  # @param p, number of predictors + intercept
+  # @return coef, coefficients for minimum cv error
+  
+  # Initialize matrices to hold the MSE for each model
+  avg_fwd_coefs <- matrix(0, ncol = length(all_imputations), 
+                          nrow = p)
+  avg_lasso_coefs <- matrix(0, ncol = length(all_imputations), 
+                          nrow = p)
+  
+  # Initialize lists to hold evaluation metrics for each model
+  eval_metrics <- list(accuracy = list(), f1 = list(), 
+                       brier = list(), auc = list(),
+                     sensitivity = list(), specificity = list())
+  
+  # Loop over each imputed dataset
+  for (i in 1:length(all_imputations)) {
+    
+    data_imputed <- all_imputations[[i]]
+    
+    # Split into train and test sets
+    set.seed(2550) # for reproducibility
+    train_index <- createDataPartition(
+      data_imputed$outcome, p = 0.8, list = FALSE)
+    data_train <- data_imputed[train_index, ]
+    data_test <- data_imputed[-train_index, ]
+    
+    # Create Train and Test Datasets
+    x_train <- data.frame(lapply(data_train, as.numeric))
+    x_train <- model.matrix(~ . - outcome, x_train)[,-1]
+    y_train <- data_train$outcome
+    
+    x_test <- data.frame(lapply(data_test, as.numeric))
+    x_test <- model.matrix(~ . - outcome, x_test)
+    y_test <- data_test$outcome
+    
+    ### Forward Stepwise Logistic Regression ###
+    fwd_coefs <- forward_stepwise(x_train, y_train)
+    # Predictions
+    log_odds_fwd <- x_test %*% fwd_coefs
+    pred_fwd <- as.numeric(1 / (1 + exp(-log_odds_fwd)))
+    
+    ### Lasso Logistic Regression ###
+    lasso_coefs <- lasso(x_train, y_train)
+    # Predictions
+    log_odds_lasso <- x_test %*% lasso_coefs
+    pred_lasso <- as.numeric(1 / (1 + exp(-log_odds_lasso)))
+    
+    # Store Coefs
+    avg_fwd_coefs[,i] <- fwd_coefs
+    avg_lasso_coefs[,i] <- lasso_coefs
+    
+    # Calculate evaluation metrics for each model
+    for (model_name in c("fwd", "lasso")) {
+      pred <- get(paste0("pred_", model_name))
+      
+      # Setting Optimal Threshold
+      roc_obj <- roc(y_test, pred)
+      optimal_coords <- coords(roc_obj, "best", ret="threshold")
+      optimal_threshold <- optimal_coords$threshold
+      
+      # print(optimal_threshold)
+      
+      # Converting probs to binary prediction
+      pred <- ifelse(pred >= optimal_threshold, 1, 0)
+
+      # Accuracy
+      eval_metrics$accuracy[[model_name]][i] <- mean(pred == y_test)
+
+      # F1-Score, Sensitivity, and Specificity
+      confusion_matrix <- table(y_test, pred)
+      precision <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+      recall <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+      f1_score <- 2 * (precision * recall) / (precision + recall)
+      sensitivity <- recall
+      specificity <- confusion_matrix[1, 1] / sum(confusion_matrix[1, ])
+      
+      eval_metrics$f1[[model_name]][i] <- f1_score
+      eval_metrics$sensitivity[[model_name]][i] <- sensitivity
+      eval_metrics$specificity[[model_name]][i] <- specificity
+
+      # Brier Score
+      eval_metrics$brier[[model_name]][i] <- brier(pred, y_test)
+
+      # AUC
+      eval_metrics$auc[[model_name]][i] <- roc_obj$auc
+    }
+  }
+  
+  # Average coeffecients across all imputed datasets for each model
+  avg_fwd_coefs = as.matrix(rowMeans(avg_fwd_coefs))
+  avg_lasso_coefs = as.matrix(rowMeans(avg_lasso_coefs))
+  
+  coefs <- cbind(avg_fwd_coefs, avg_lasso_coefs)
+  rownames(coefs) <- c('(Intercept)',colnames(x_train))
+  colnames(coefs) <- c('Fwd Step', 'Lasso')
+  
+  # Calculate average metrics across all imputations
+  avg_metrics <- lapply(eval_metrics, function(metric) {
+    sapply(metric, mean, na.rm = TRUE)
+  })
+  
+  # Return MSE for each of the 3 models
+  return(list(
+    coefs = coefs,
+    eval_metrics = avg_metrics))
+}
+```
+
+```{r}
+# 36 Week Model
+final_36_results <- model_data(data_36, 18)
+
+# 44 Week Model
+final_44_results <- model_data(data_imp, 24)
+```
+
+```{r}
+final_36_results
+```
+
+```{r}
+final_44_results
+```

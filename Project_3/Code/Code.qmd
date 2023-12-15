@@ -1,0 +1,575 @@
+---
+title: "PHP 2550: Project 2 - Code"
+subtitle: "Due: November 12th by 11:59pm"
+format: pdf
+editor: visual
+---
+
+## Code Appendix
+
+```{r}
+library(riskCommunicator)
+library(tidyverse)
+library(tableone)
+
+data("framingham")
+
+# The Framingham data has been used to create models for cardiovascular risk.
+# The variable selection and model below are designed to mimic the models used
+# in the paper General Cardiovascular Risk Profile for Use in Primary Care 
+# This paper is available (cvd_risk_profile.pdf) on Canvas.
+
+framingham_df <- framingham %>% dplyr::select(c(CVD, TIMECVD, SEX, TOTCHOL, AGE,
+                                      SYSBP, DIABP, CURSMOKE, DIABETES, BPMEDS,
+                                      HDLC, BMI))
+framingham_df <- na.omit(framingham_df)
+
+CreateTableOne(data=framingham_df, strata = c("SEX"))
+
+# Get blood pressure based on whether or not on BPMEDS
+framingham_df$SYSBP_UT <- ifelse(framingham_df$BPMEDS == 0, 
+                                 framingham_df$SYSBP, 0)
+framingham_df$SYSBP_T <- ifelse(framingham_df$BPMEDS == 1, 
+                                framingham_df$SYSBP, 0)
+
+# Looking at risk within 15 years - remove censored data
+dim(framingham_df)
+framingham_df <- framingham_df %>%
+  filter(!(CVD == 0 & TIMECVD <= 365*15)) %>%
+  dplyr::select(-c(TIMECVD))
+dim(framingham_df)
+
+# Filter to each sex
+framingham_df_men <- framingham_df %>% filter(SEX == 1)
+framingham_df_women <- framingham_df %>% filter(SEX == 2)
+```
+
+```{r}
+# The NHANES data here finds the same covariates among this national survey data
+library(nhanesA)
+
+# blood pressure, demographic, bmi, smoking, and hypertension info
+bpx_2017 <- nhanes("BPX_J") %>% 
+  dplyr::select(SEQN, BPXSY1 ) %>% 
+  rename(SYSBP = BPXSY1)
+
+demo_2017 <- nhanes("DEMO_J") %>% 
+  dplyr::select(SEQN, RIAGENDR, RIDAGEYR) %>% 
+  rename(SEX = RIAGENDR, AGE = RIDAGEYR)
+
+bmx_2017 <- nhanes("BMX_J") %>% 
+  dplyr::select(SEQN, BMXBMI) %>% 
+  rename(BMI = BMXBMI)
+
+smq_2017 <- nhanes("SMQ_J") %>%
+  mutate(CURSMOKE = case_when(SMQ040 %in% c(1,2) ~ 1,
+                              SMQ040 == 3 ~ 0, 
+                              SMQ020 == 2 ~ 0)) %>%
+  dplyr::select(SEQN, CURSMOKE)
+
+bpq_2017 <- nhanes("BPQ_J") %>% 
+  mutate(BPMEDS = case_when(
+    BPQ020 == 2 ~ 0, 
+    BPQ040A == 2 ~ 0,
+    BPQ050A == 1 ~ 1,
+    TRUE ~ NA )) %>%
+  dplyr::select(SEQN, BPMEDS) 
+
+tchol_2017 <- nhanes("TCHOL_J") %>% 
+  dplyr::select(SEQN, LBXTC) %>% 
+  rename(TOTCHOL = LBXTC)
+
+hdl_2017 <- nhanes("HDL_J") %>% 
+  dplyr::select(SEQN, LBDHDD) %>% 
+  rename(HDLC = LBDHDD)
+
+diq_2017 <- nhanes("DIQ_J") %>% 
+  mutate(DIABETES = case_when(DIQ010 == 1 ~ 1, 
+                              DIQ010 %in% c(2,3) ~ 0, 
+                              TRUE ~ NA)) %>%
+  dplyr::select(SEQN, DIABETES) 
+
+mcq_2017 <- nhanes("MCQ_J") %>% 
+  mutate(HAorS = ifelse(MCQ160E == 1 & MCQ160F == 1, 1, 0)) %>%
+  dplyr::select(SEQN, HAorS) 
+
+
+# Join data from different tables
+df_2017 <- bpx_2017 %>%
+  full_join(demo_2017, by = "SEQN") %>%
+  full_join(bmx_2017, by = "SEQN") %>%
+  full_join(hdl_2017, by = "SEQN") %>%
+  full_join(smq_2017, by = "SEQN") %>%
+  full_join(bpq_2017, by = "SEQN") %>%
+  full_join(tchol_2017, by = "SEQN") %>%
+  full_join(diq_2017, by = "SEQN") %>%
+  full_join(mcq_2017, by = "SEQN")
+```
+
+```{r}
+library(tidyverse)
+library(purrr)
+library(broom)
+library(mice)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(summarytools)
+library(glmnet) 
+
+### OBJECTIVE ONE ###
+
+# Filitering Eligible NHANES observations 
+# Drops 67 that have had heart attack or stroke
+# Drops 6,415 that are outside of age range
+# Final size is n=2772 observations
+nhanes <- df_2017 %>%
+  filter(AGE < 62 & AGE > 30 & HAorS != 1) %>%
+  dplyr::select(SEX, AGE, SYSBP, CURSMOKE, DIABETES, BPMEDS, HDLC, BMI, TOTCHOL)
+
+# Framingham data with matching variables and variables necessary for model 
+# i.e. SYSBP_UT, SYSBP_T, and CVD
+framingham <- framingham_df %>% 
+  dplyr::select(SEX, AGE, SYSBP, CURSMOKE, DIABETES, 
+         BPMEDS, HDLC, BMI, TOTCHOL, CVD, SYSBP_UT, SYSBP_T)
+```
+
+```{r}
+# NOTE: Framingham data does not having any missingness
+
+missing <- nhanes %>%
+  summarise(
+    N = colSums(is.na(nhanes)),
+    prop = round(colMeans(is.na(nhanes))*100, 2)) %>%
+  mutate(Variables = colnames(nhanes)) %>%
+  arrange(desc(prop)) %>%
+  filter(prop > 0) %>%
+  as.data.frame()
+kable(missing[,c(3,2,1)], 
+       caption ='NHANES Missing Data',
+       col.names = c("Variable","Proportion (%)", "n")) %>%
+     kable_styling(bootstrap_options = c("hover"), full_width = F) %>%
+     row_spec(0, background = "#333333", color = "white") %>%
+     row_spec(c(2:3), background = "lightpink", color = "black")
+```
+
+```{r}
+# Variables that appear missing together
+# Check how many are missing from each observation
+na_count_per_row <- rowSums(is.na(
+  nhanes[c("SYSBP", "BMI", "BPMEDS", "HDLC", "TOTCHOL")]))
+
+# Keep rows where not all of the specified variables are NA
+nhanes <- nhanes[na_count_per_row != 5,]
+
+# Drops 10 rows or 0.3% of observations, 
+# where "SYSBP", "BMI", "BPMEDS", "HDLC", "TOTCHOL" are all missing
+print(2772 - nrow(nhanes))
+```
+
+```{r}
+# Set seed for reproducibility
+set.seed(1)
+
+# Multiple Imputation
+mice_mod <- mice(nhanes, m = 5, meth = 'pmm', seed = 2550)
+
+# List of Imputed Set
+nhanes_imp = vector("list",5)
+for (i in 1:5){
+  imp = complete(mice_mod,i)
+  nhanes_imp[[i]] = cbind(imp)
+}
+```
+
+```{r}
+# for each imp: 
+#   1) fit study models
+#   2) calculate weights
+#   3) calculate brier risk
+
+set.seed(1)
+
+nh_brier_risks_men <- numeric(5)
+nh_brier_risks_women <- numeric(5)
+
+for (i in 1:5){
+  # IMPUTED NHANES DATA
+  nhanes_i <- nhanes_imp[[i]]
+  
+  # Adding missing variables from Framingham to NHANES data 
+  nhanes_i$CVD <- NA
+  nhanes_i$SYSBP_UT <- ifelse(nhanes_i$BPMEDS == 0, nhanes_i$SYSBP, 0)
+  nhanes_i$SYSBP_T <- ifelse(nhanes_i$BPMEDS == 1, nhanes_i$SYSBP, 0)
+  
+  # Add study source indicator
+  framingham$STUDY <- 1
+  nhanes_i$STUDY <- 0
+  
+  # Combine datasets
+  combined_df <- rbind(framingham, nhanes_i)
+  
+  # TEST TRAIN SPLIT NHANES 
+  train_ind <- sample(c(TRUE, FALSE), nrow(combined_df), replace=TRUE, prob=c(0.8,0.2))
+  combined_train_df  <- combined_df[train_ind,]
+  combined_test_df   <- combined_df[!train_ind,]
+  
+  # Fit models with log transforms for all continuous variables
+  mod_men <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                   log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+        data = combined_train_df[combined_train_df$SEX == 1,], family="binomial")
+  
+  
+  mod_women <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                     log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+                 data = combined_train_df[combined_train_df$SEX == 2,], family="binomial")
+  
+  # NHANES BRIER SCORE CALC:
+  
+  # 1) Fit a logistic regression model
+  # Will be used to get the probabilities that 
+  # observations came from the Framingham vs NHANES studies
+  # Fit on variables in both studies
+  study_model <- glm(STUDY ~ SEX + AGE + SYSBP + CURSMOKE + 
+                       DIABETES + BPMEDS + HDLC + BMI + TOTCHOL, 
+                       data = combined_train_df, 
+                       family = binomial())
+  
+  # Get estimated probabilities observations are in Framingham
+  pr_fram <- predict(study_model, newdata = combined_test_df, type = "response")
+  
+  # 2) Calculate Inverse Odds Weights
+  combined_test_df$weights <- (1-pr_fram)/pr_fram
+  
+  # 3) Calculating Brier Risk
+  
+  # Framingham Men Data
+  men <- combined_test_df[combined_test_df$STUDY == 1 & combined_test_df$SEX == 1,] 
+  
+  # Framingham Women Data
+  women <- combined_test_df[combined_test_df$STUDY == 1 & combined_test_df$SEX == 2,] 
+  
+  # CVD Predictions
+  men_pred <- predict(mod_men, newdata = men, type = "response")
+  women_pred <- predict(mod_women, newdata = women, type = "response")
+  
+  # Brier Risks
+  nh_brier_risks_men[i] <- sum(men$weights*(men$CVD - men_pred)^2)/
+    nrow(combined_test_df[combined_test_df$STUDY == 0 & combined_test_df$SEX == 1,])
+  
+  nh_brier_risks_women[i] <- sum(women$weights*(women$CVD - women_pred)^2)/
+    nrow(combined_test_df[combined_test_df$STUDY == 0 & combined_test_df$SEX == 2,])
+}
+
+# average brier risks across imputations
+mean(nh_brier_risks_men)
+mean(nh_brier_risks_women)
+```
+
+```{r}
+### OBJECTIVE TWO ###
+
+library(reshape2)
+
+f_nhanes_var <- framingham %>% 
+  dplyr::select(SEX, AGE, SYSBP, CURSMOKE, DIABETES, BPMEDS, HDLC, BMI, TOTCHOL)
+
+# Compute correlation matrix
+cor_matrix <- cor(f_nhanes_var, use = "pairwise.complete.obs")
+
+# Melt the correlation matrix for ggplot
+cor_df <- melt(cor_matrix)
+
+ggplot(data = cor_df, aes(x = Var1, y = Var2)) + 
+  geom_tile(aes(fill = value), color = "white") + 
+  geom_text(aes(label = sprintf("%.2f", value)), size = 1.8) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 10, hjust = 1),
+        axis.text.y = element_text(size = 10)) +
+  coord_fixed() +
+  labs(x = "", y = "", title=
+         "Correlation Matrix Between Predictors")
+```
+
+```{r}
+# NHANES Observations eligible for Framingham requirements
+CreateTableOne(data = nhanes, strata = c("SEX"))
+```
+
+```{r}
+library(MASS)
+
+simulate_NHANES <- function(){
+  # Calc correlation matrix for Framingham Data
+  data <- framingham %>% 
+    dplyr::select(AGE, SYSBP, CURSMOKE, DIABETES, BPMEDS, HDLC, BMI, TOTCHOL)
+  cor_matrix <- cor(data, use = "pairwise.complete.obs")
+  
+  # Generate data using multivariate normal distribution using correlation matrix
+  # Then get the percentiles so that we can then draw from different distributions
+  sim_data <- as.data.frame(
+                    mvrnorm(2762, # Number of observations in NHANES 
+                      mu = rep(0,8), 
+                      Sigma = cor_matrix)) %>% 
+            mutate_all(pnorm)
+  
+  # Assign Sex first, since statistics for NHANES are stratified by sex
+  sim_data$SEX <- c(rep(1,1300),rep(2,1462)) # SEX is binary 1/2
+  
+  # Binary variables, translate norm percentiles using qbinom
+  # Threshold is determined based on proportion in NHANES 
+  sim_data$CURSMOKE <- ifelse(
+      sim_data$SEX == 1,
+      qbinom(sim_data$CURSMOKE, 1, .26),
+      qbinom(sim_data$CURSMOKE, 1, .17)
+    )
+  sim_data$DIABETES <- ifelse(
+      sim_data$SEX == 1,
+      qbinom(sim_data$DIABETES, 1, .13),
+      qbinom(sim_data$DIABETES, 1, .10)
+    )
+  sim_data$BPMEDS <- ifelse(
+    sim_data$SEX == 1,
+    qbinom(sim_data$BPMEDS, 1, .24),
+    qbinom(sim_data$BPMEDS, 1, .22)
+  )
+  
+  # Standarizing Framingham Variables so we can get the quantiles from the
+  # same distribution and then recenter and scale accorind to NHANES
+  sdz_AGE <- (framingham$AGE - mean(framingham$AGE))/sd(framingham$AGE)
+  sdz_SYSBP <- (framingham$SYSBP - mean(framingham$SYSBP))/sd(framingham$SYSBP)
+  sdz_HDLC <- (framingham$HDLC - mean(framingham$HDLC))/sd(framingham$HDLC)
+  sdz_BMI <- (framingham$BMI - mean(framingham$BMI))/sd(framingham$BMI)
+  sdz_TOTCHOL <- (framingham$TOTCHOL - mean(framingham$TOTCHOL))/sd(framingham$TOTCHOL)
+    
+  # Using means and sd from NHANES,
+  sim_data$AGE <- runif(2762,30,62)
+  
+  sim_data$SYSBP <- ifelse(
+    sim_data$SEX == 1,
+    quantile(sdz_SYSBP, sim_data$SYSBP)*16.48 + 125.77,
+    quantile(sdz_SYSBP, sim_data$SYSBP)*18.92 + 122.58
+  )
+  
+  sim_data$HDLC <- ifelse(
+    sim_data$SEX == 1,
+    quantile(sdz_HDLC, sim_data$HDLC)*14.44 + 47.49,
+    quantile(sdz_HDLC, sim_data$HDLC)*16.26 + 57.41
+  )
+  
+  sim_data$BMI <- ifelse(
+    sim_data$SEX == 1,
+    quantile(sdz_BMI, sim_data$BMI)*6.80 + 30.25,
+    quantile(sdz_BMI, sim_data$BMI)*8.45 + 30.91
+  )
+  
+  sim_data$TOTCHOL <- ifelse(
+    sim_data$SEX == 1,
+    quantile(sdz_TOTCHOL, sim_data$TOTCHOL)*40.16 + 193.70,
+    quantile(sdz_TOTCHOL, sim_data$TOTCHOL)*38.42 + 195.98
+  )
+  
+  # Drop observations according to Framingham eligibility criteria
+  # sim_data <- sim_data %>%
+  #   filter(AGE >= 30 & AGE <= 62)
+  
+  # Recenter AGE after dropping those no eligible, slight change just to recenter
+  # sim_data$AGE <- sim_data$AGE - (mean(sim_data$AGE) - mean(nhanes$AGE))
+
+  return(sim_data)
+}
+```
+
+```{r}
+set.seed(1)
+
+sim_nhanes <- simulate_NHANES()
+
+# Simulation Observations 
+CreateTableOne(data = sim_nhanes, strata = c("SEX"))
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Continuous Variable Distributions
+framingham_long <- framingham %>%
+  dplyr::select(SEX, AGE, SYSBP, HDLC, BMI, TOTCHOL) %>%
+  gather(key = "variable", value = "value", -SEX)
+
+ggplot(framingham_long, aes(x = value, fill = as.factor(SEX))) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 38) +
+  scale_fill_manual(values = c("#FF9999", "#9999FF")) +
+  scale_fill_manual(values = c("#FF9999", "#9999FF"), 
+                    labels = c("Male", "Female")) +
+  labs(title = "Framingham Variable Distribution by Sex", 
+       x = "Value", fill = "Sex") +
+  facet_wrap(~variable, scales = "free") +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+```{r}
+set.seed(1)
+
+sim_nhanes <- simulate_NHANES()
+
+# Continuous Variable Distributions
+framingham_long <- sim_nhanes %>%
+  dplyr::select(SEX, AGE, SYSBP, HDLC, BMI, TOTCHOL) %>%
+  gather(key = "variable", value = "value", -SEX)
+
+ggplot(framingham_long, aes(x = value, fill = as.factor(SEX))) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 28) +
+  scale_fill_manual(values = c("#FF9999", "#9999FF")) +
+  scale_fill_manual(values = c("#FF9999", "#9999FF"), 
+                    labels = c("Male", "Female")) +
+  labs(title = "Simulated NHANES Variable Distribution by Sex", 
+       x = "Value", fill = "Sex") +
+  facet_wrap(~variable, scales = "free") +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+```{r}
+# Continuous Variable Distributions
+framingham_long <- nhanes %>%
+  dplyr::select(SEX, AGE, SYSBP, HDLC, BMI, TOTCHOL) %>%
+  gather(key = "variable", value = "value", -SEX)
+
+ggplot(framingham_long, aes(x = value, fill = as.factor(SEX))) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = c("#FF9999", "#9999FF")) +
+  scale_fill_manual(values = c("#FF9999", "#9999FF"), 
+                    labels = c("Male", "Female")) +
+  labs(title = "NHANES Variable Distribution by Sex", 
+       x = "Value", fill = "Sex") +
+  facet_wrap(~variable, scales = "free") +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+```{r}
+brier_risks_men <- numeric(500)
+brier_risks_women <- numeric(500)
+
+set.seed(1)
+
+for (i in 1:500){
+  sim_nhanes <- simulate_NHANES()
+  
+  # Adding missing variables from Framingham to NHANES data 
+  sim_nhanes$CVD <- NA
+  sim_nhanes$SYSBP_UT <- ifelse(sim_nhanes$BPMEDS == 0, sim_nhanes$SYSBP, 0)
+  sim_nhanes$SYSBP_T <- ifelse(sim_nhanes$BPMEDS == 1, sim_nhanes$SYSBP, 0)
+  
+  # Add study source indicator
+  framingham$STUDY <- 1
+  sim_nhanes$STUDY <- 0
+  
+  # Combine datasets
+  combined_df <- rbind(framingham, sim_nhanes)
+  
+  # TEST TRAIN SPLIT NHANES 
+  train_ind <- sample(c(TRUE, FALSE), nrow(combined_df), replace=TRUE, prob=c(0.8,0.2))
+  combined_train_df  <- combined_df[train_ind,]
+  combined_test_df   <- combined_df[!train_ind,]
+  
+  # Fit models with log transforms for all continuous variables
+  mod_men <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                   log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+        data = combined_train_df[combined_train_df$SEX == 1,], family="binomial")
+  
+  
+  mod_women <- glm(CVD~log(HDLC)+log(TOTCHOL)+log(AGE)+log(SYSBP_UT+1)+
+                     log(SYSBP_T+1)+CURSMOKE+DIABETES, 
+                 data = combined_train_df[combined_train_df$SEX == 2,], family="binomial")
+  
+  # 1) Fit a logistic regression model
+  # Will be used to get the probabilities that 
+  # observations came from the Framingham vs NHANES studies
+  # Fit on variables in both studies
+  study_model <- glm(STUDY ~ SEX + AGE + SYSBP + CURSMOKE + 
+                       DIABETES + BPMEDS + HDLC + BMI + TOTCHOL, 
+                       data = combined_df, 
+                       family = binomial())
+  
+  # Get probabilities observations are in Framingham
+  pr_fram <- predict(study_model, newdata = combined_df, type = "response")
+  
+  # 2) Calculate Inverse Odds Weights
+  combined_df$weights <- (1 - pr_fram)/pr_fram
+  
+  # 3) Calculating Brier Risk
+  
+  # Framingham Men Data
+  men <- combined_df[combined_df$STUDY == 1 & combined_df$SEX == 1,] 
+  
+  # Framingham Women Data
+  women <- combined_df[combined_df$STUDY == 1 & combined_df$SEX == 2,] 
+  
+  # Predictions
+  men_pred <- predict(mod_men, newdata = men, type = "response")
+  women_pred <- predict(mod_women, newdata = women, type = "response")
+  
+  # Brier Risks
+  brier_risks_men[i] <- sum(men$weights*(men$CVD - men_pred)^2)/
+    nrow(combined_df[combined_df$STUDY == 0 & combined_df$SEX == 1,])
+  
+  brier_risks_women[i] <- sum(women$weights*(women$CVD - women_pred)^2)/
+    nrow(combined_df[combined_df$STUDY == 0 & combined_df$SEX == 2,])
+}
+
+# average brier risks across imputations
+mean(brier_risks_men)
+mean(brier_risks_women)
+```
+
+```{r}
+round(sd(brier_risks_men), 5)
+round(sd(brier_risks_women), 5)
+```
+
+```{r}
+# Create the histogram using ggplot
+ggplot_hist <- ggplot(data.frame(brier_risks_men), 
+                      aes(x = brier_risks_men - mean(nh_brier_risks_men))) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.002, fill = "lightblue", color = "black") +
+  ggtitle("Simulated Men's Estimated Brier Risk Bias") +
+  xlab("Brier Risk Bias") +
+  ylab("Density") +
+  theme_minimal()
+
+# Print the plot
+print(ggplot_hist)
+```
+
+```{r}
+# Create the histogram using ggplot
+ggplot_hist <- ggplot(data.frame(brier_risks_women), 
+                      aes(x = brier_risks_women - mean(nh_brier_risks_women))) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.0007, fill = "lightblue", color = "black") +
+  ggtitle("Simulated Women's Estimated Brier Risk Bias") +
+  xlab("Brier Risk Bias") +
+  ylab("Density") +
+  theme_minimal()
+
+# Print the plot
+print(ggplot_hist)
+```
+
+```{r}
+# BIASES
+brier_women_true <-mean(nh_brier_risks_women)
+brier_men_true <- mean(nh_brier_risks_men)
+
+mean(brier_risks_men) - brier_men_true
+mean(brier_risks_women) - brier_women_true
+```

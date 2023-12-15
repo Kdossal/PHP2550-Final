@@ -1,0 +1,186 @@
+---
+title: "Project 3: Simulation Study"
+subtitle: "December 15th"
+format: pdf
+editor: visual
+geometry: "left=2cm,right=2cm,top=2cm,bottom=2cm"
+---
+
+## **Abstract**
+
+**Background:** This project, in collaboration with Dr. Jon Steingrimsson, focuses on the generalizability of cardiovascular risk prediction models, in populations distinct from their training sample. Transportability analysis techniques can help understand the generalizability of these models but typically require individual-level data from a target population that might not be available. In these cases simulating a target population using basic summary statistics and background knowledge from collected sample data may be one option to face this challenge.
+
+**Methods:** This study aims to create a simulated target population using background knowledge derived from the Framingham Heart Study to simulate our target population from the National Health and Nutrition Examination Survey (NHANES) with only access to summary statistics. We developed separate prediction models for men and women (D'Agostino, 2008) and evaluated their transportability to the NHANES cohort through two distinct methodologies: direct application of the models to the NHANES individual-level data and a simulation-based estimation.
+
+**Results:** Our findings reveal that the simulated estimation yielded low Brier Risk scores that closely resemble those found using the non-simulated NHANES data. This demonstrate the robustness of the models across different demographic settings and suggest that employing simulated data for transportability analysis is an effective method for estimating Brier Risk scores in target populations where individual-level data may not available.
+
+## **1. Introduction**
+
+Cardiovascular disease (CVD) remains a leading cause of morbidity and mortality worldwide, necessitating effective tools for risk prediction. Users of prediction models, particularly in healthcare settings, are often interested in deploying these models within their target populations to identify individuals at high risk for cardiovascular events. However, a significant challenge arises when the data used for developing these prediction models do not represent a random sample from the target population. This discrepancy can result in significant biases when the model is applied outside its original context.
+
+A notable example is the Framingham ATP-III model, used to predict the risk of cardiovascular events. This model, built using source data with predominantly white participants, has been shown to generalize poorly to multi-ethnic populations. Such disparities highlight the crucial need for methods that can effectively evaluate and adapt prediction models for use in different target populations.
+
+Our project aims to address this gap by applying methods to transport a risk score model, originally built using data from the Framingham Heart Study, and then estimate its performance in a population represented by the NHANES (National Health and Nutrition Examination Survey) data. The transportability of these models is critical for their applicability in diverse settings, especially when considering the demographic and health characteristics that may vary significantly between the source and target populations.
+
+#### 1.1 Data Overview
+
+**Framingham Heart Study Data**
+
+The Framingham Heart Study data was collected from a long-term, ongoing cardiovascular cohort study made up of 2,539 observations. (Mahmood et al., 2014) This dataset includes a wide range of cardiovascular risk factors such as age, sex, total cholesterol (`TOTCHOL`), systolic blood pressure (`SYSBP`), diastolic blood pressure (`DIABP`), current smoking status (`CURSMOKE`), diabetes status (`DIABETES`), blood pressure medication status (`BPMEDS`), HDL cholesterol (`HDLC`), body mass index (`BMI`), and specific variables like treated systolic blood pressure (`SYSBP_T`) and untreated systolic blood pressure (`SYSBP_UT`). The dataset also includes information on cardiovascular disease outcomes (`CVD`), which is our outcome for building our prediction model.
+
+**NHANES Data**
+
+The NHANES dataset is a program of studies designed to assess the health and nutritional status of adults and children in the United States made up of 9,254 observations from 2017. (National Center for Health Statistics, 2017) This dataset includes similar variables to the Framingham study, such as systolic blood pressure (`SYSBP`), sex (`SEX`), age (`AGE`), `BMI`, HDL cholesterol (`HDLC`), current smoking status (`CURSMOKE`), blood pressure medication status (`BPMEDS`), total cholesterol (`TOTCHOL`), and diabetes status (`DIABETES`). However, unlike the Framingham data, NHANES does not include long-term outcomes for CVD events.
+
+For this project, we focused on aligning and preprocessing these datasets to ensure compatibility and relevance. The NHANES data was filtered to match the eligibility criteria of the Framingham study, including only individuals aged between 30 and 62 years old (dropping 6,415 observations) and individuals who have never had a heart attack or stroke (dropping 67 observations) resulting in a final dataset of 2,772 observations.
+
+#### 1.2 Project Overview
+
+This project is centered around two primary objectives, each focusing on the transportability analysis of cardiovascular risk prediction models. These models, initially developed using the Framingham Heart Study data, are applied to both actual and simulated NHANES data to evaluate their performance across diverse populations.
+
+**Transportability Analysis Using NHANES Dataset**
+
+The first objective involves a direct application of the Framingham-derived models to the NHANES dataset. This process begins with the creation of a combined dataset, incorporating variables from both Framingham and NHANES, while the outcome variable `CVD` is exclusively derived from the Framingham study. Separate models for men and women are fitted and evaluated. The key metric for assessing model performance in this objective is the Brier Risk Score, which provides a measure of the accuracy of the predictive models when applied to the NHANES target population.
+
+**Transportability Analysis Using Simulated NHANES Dataset**
+
+The second objective delves into a more nuanced analysis using the ADEMP framework to simulate the NHANES dataset. The aim here is to compare the transportability analysis results between the actual NHANES data and the simulated counterpart. The data generating mechanism for the simulation draws on the intervariable correlations and distributions from the Framingham dataset, combined with basic descriptive statistics from NHANES. The Brier Risk Score remains the primary estimator for evaluating the transportability of the models. The methods involve a similar process of creating a combined dataset, but this time integrating the Framingham data with the simulated NHANES data. Again, models for each gender are developed and assessed. The performance metric in this objective is the bias observed in the Brier Risk Scores when comparing the simulated NHANES dataset to the actual NHANES dataset.
+
+## **2. Methods**
+
+### 2.1 Missing Data
+
+In the course of our analysis, we encountered the challenge of missing data, predominantly within the NHANES dataset. Unlike the Framingham dataset, which presented no missing data issues, NHANES exhibited a significant proportion of missing values across several key variables.
+
+![Missing Data in NHANES](Missing.jpg){width="180"}
+
+Shown Figure 1 above, variables including `HDLC` and `TOTCHOL`, exhibited simultaneous missingness, likely caused by missing medical tests. To tackle this issue, multiple imputation was used, this involved the creation of five distinct imputed datasets. For each dataset, we calculated the non-simulated Brier risk score estimates. These scores were then averaged to derive the estimated Brier score, which was used to assess transportability.
+
+### 2.2 Exploratory Data Analysis
+
+Exploratory data analysis began with a deep dive into the Framingham dataset, which was used in developing our CVD prediction models as well as crucial to creating our simulated NHANES data. A descriptive statistical analysis, stratified by sex, revealed notable differences across several key variables. Here we present the summarized statistics:
+
+**Table 1: Framingham Descriptive Statistics by Sex**
+
+| Variable | Male (Mean (SD))  | Female (Mean (SD)) | p-value |
+|----------|-------------------|--------------------|---------|
+| n        | 1110              | 1468               |         |
+| CVD      | 0.32 (0.47)       | 0.16 (0.37)        | \<0.001 |
+| TIMECVD  | 7226.18 (2402.62) | 7952.63 (1830.88)  | \<0.001 |
+| SEX      | 1.00 (0.00)       | 2.00 (0.00)        | \<0.001 |
+| TOTCHOL  | 226.34 (41.49)    | 246.22 (45.91)     | \<0.001 |
+| AGE      | 60.08 (8.23)      | 60.62 (8.41)       | 0.102   |
+| SYSBP    | 138.90 (21.05)    | 140.02 (23.74)     | 0.215   |
+| DIABP    | 81.88 (11.41)     | 80.33 (11.08)      | 0.001   |
+| CURSMOKE | 0.39 (0.49)       | 0.31 (0.46)        | \<0.001 |
+| DIABETES | 0.09 (0.28)       | 0.07 (0.25)        | 0.049   |
+| BPMEDS   | 0.11 (0.32)       | 0.18 (0.38)        | \<0.001 |
+| HDLC     | 43.58 (13.36)     | 53.03 (15.69)      | \<0.001 |
+| BMI      | 26.21 (3.49)      | 25.55 (4.25)       | \<0.001 |
+
+![](fram_dist.jpg){width="602"}
+
+Using the descriptive statistics shown in Table 1 and the variable distributions in the figure above we can see several key details in Framingham's predictor variables. To start the difference in mean values of CVD, HDLC, and BMI, alongside the significant p-values, highlight distinct cardiovascular health profiles between the sexes. We also observed that BMI, TOTCHOL, HDLC, and SYSBP are all skewed to the right, indicating that normal distribution assumptions would not be appropriate for data generation during our simulation study. Moreover, the distributions for HDLC and BMI differed between sexes, suggesting that separating data by sex in the analysis would be neccessary. Lastly, the AGE variable displayed a unique distribution with fewer occurrences near the ages of 40 and 80 and a nearly uniform distribution with slight right skewness between these ages.
+
+![](corr.jpg){width="323"}
+
+In addition to this, to understand the interrelationships among predictor variables a correlation matrix shown above was generated. This revealed various degrees of correlation between our predictor variables such as AGE and SYSBP which had a strong positive correlation between them. This is important as during our data generating process we will want our simulated data to follow a simple structure, under the assumption that the NHANES dataset will exhibit similar intercorrelation relationships as the Framingham dataset.
+
+### 2.3 Data Generation
+
+The data generation process for simulating the NHANES data began with utilizing the correlation matrix from the Framingham study's predictor variables (excluding sex) to generate a dataset from a multivariate normal distribution using the `mvnorm` function. The resulting values were then transformed into percentiles through the `pnorm` function. This step was essential, as our exploratory data analysis indicated skewed distributions for several Framingham variables, necessitating an approach that would account for this skewness during simulation.
+
+With the generated percentiles in hand, we proceeded to sample from the standardized distributions of the continuous Framingham variables to maintain the skewed and unique distributions. Subsequently, `SEX` was assigned to each observation, with 1462 allocated as females and 1300 as males, the same sex distribution observed in NHANES.
+
+This gender assignment was integral in mirroring the true NHANES population as in exploratory analysis of the Framingham data and from the basic descriptive statistics we have available for NHANES we noticed a strong difference between the sexes. The next phase leveraged the NHANES descriptive statistics, to refine our simulated data. The NHANES statistics provided a benchmark for recentering and rescaling the continuous variables from the standardized Framingham distributions:
+
+**Table 2: NHANES Descriptive Statistics by Sex**
+
+| Variable | Male (Mean (SD)) | Women (Mean (SD)) | p-value |
+|----------|------------------|-------------------|---------|
+| n        | 1300             | 1462              |         |
+| AGE      | 46.88 (9.37)     | 46.61 (9.25)      | 0.458   |
+| SYSBP    | 125.77 (16.48)   | 122.58 (18.92)    | \<0.001 |
+| CURSMOKE | 0.26 (0.44)      | 0.17 (0.38)       | \<0.001 |
+| DIABETES | 0.13 (0.33)      | 0.10 (0.31)       | 0.068   |
+| BPMEDS   | 0.24 (0.43)      | 0.22 (0.42)       | 0.245   |
+| HDLC     | 47.49 (14.44)    | 57.41 (16.26)     | \<0.001 |
+| BMI      | 30.25 (6.80)     | 30.91 (8.45)      | 0.027   |
+| TOTCHOL  | 193.70 (40.16)   | 195.98 (38.42)    | 0.149   |
+
+Binary variables such as `CURSMOKE`, `BPMEDS`, and `DIABETES` were converted from norm percentiles using `qbinom`, with thresholds determined by the proportions in NHANES. For the continuous variables, after sampling from the standardized Framingham distributions, they were recentered and rescaled to align with their NHANES counterparts' means and standard deviations. A notable exception was made for the variable `Age`. Initially, we applied the same methodology for age as we did for other continuous variables. However, upon simulating and comparing to NHANES data, it became evident that a uniform distribution more accurately emulated the true distribution of seen in NHANES. This adjustment was vital as the age distribution in NHANES follows a considerably different pattern than observed in the Framingham data. Below shows the descriptive statistics and distributions of one such simulated dataset:
+
+**Table 3: Simulated Dataset Descriptive Statistics by Sex**
+
+| Variable | Sex 1 (Mean (SD)) | Sex 2 (Mean (SD)) | p-value |
+|----------|-------------------|-------------------|---------|
+| n        | 1300              | 1462              |         |
+| AGE      | 45.71 (9.07)      | 46.11 (9.44)      | 0.255   |
+| SYSBP    | 125.77 (16.97)    | 123.15 (19.18)    | \<0.001 |
+| CURSMOKE | 0.24 (0.43)       | 0.18 (0.38)       | \<0.001 |
+| DIABETES | 0.15 (0.35)       | 0.10 (0.30)       | 0.001   |
+| BPMEDS   | 0.25 (0.43)       | 0.22 (0.42)       | 0.149   |
+| HDLC     | 47.93 (15.27)     | 57.25 (16.15)     | \<0.001 |
+| BMI      | 30.05 (7.02)      | 30.93 (8.14)      | 0.002   |
+| TOTCHOL  | 193.78 (39.49)    | 195.04 (36.18)    | 0.384   |
+
+![](sim_dist.jpg){width="600"}
+
+From the table above we can see that the means and standard deviations of the simulated data closely resemble those of the actual NHANES values. The figure above also confirms that the simulated dataset distributions also align closely with those from the Framingham variables. Comparing these to the true NHANES distributions:
+
+![](nhanes_dist.jpg){width="600"}
+
+The true NHANES variable distributions are notably similar to the simulated distributions. Overall, the simulation process effectively replicates the NHANES means and standard deviations while preserving the distributional characteristics observed in the Framingham study, the one exception being `age` which instead relied on a sampling from a uniform distribution.
+
+### 2.4 Brier Risk Estimation
+
+The estimation of Brier risk scores for both simulated and non-simulated NHANES datasets involved a similar methodology. The initial step was to merge the NHANES dataset, whether simulated or actual, with the Framingham dataset. After this, we performed an 80-20% train-test split. Using the training data, we then fit two logistic regression models for each sex to predict the occurrence of cardiovascular disease (CVD). The model used was predefined for this project and took the following form: `glm(CVD ~ log(HDLC) + log(TOTCHOL) + log(AGE) + log(SYSBP_UT + 1) + log(SYSBP_T + 1) + CURSMOKE + DIABETES, family = "binomial")`
+
+Following the model fitting, we proceeded to calculate the estimated Brier score using the formula (Steingrimsson, 2022):
+
+$$
+\hat{\psi_{\hat{\beta}}} = \frac{\sum^{n}_{i=1}{I(S_i=1, D_i=1)\hat{o}(X_i)(Y_i-g_{\hat{\beta}}(X_i))^2}}{\sum^{n}_{i=1}{I(S_i=0, D_i=1)}}
+$$
+
+Here, $S$ indicates whether the individual is from the Framingham study $S=1$ or the NHANES dataset $S=0$, and $D$ differentiates between the training $D=0$ and test $D=1$ sets. The function $g(X)$ represents the predictive model for the probability of $Y=1$ given $X$ in the training set. The term $\hat{o}(X)$ is the estimator for the inverse odds weights in the test set, defined as:
+
+$$
+\hat{o}(X) = \frac{Pr[S=0|X, D=1]}{Pr[S=1|X, D=1]} 
+$$
+
+To calculate the inverse-odds weights, we fit a logistic regression model to estimate the probability of an observation coming from the NHANES study as opposed to the Framingham study: `glm(STUDY ~ SEX + AGE + SYSBP + CURSMOKE + DIABETES + BPMEDS + HDLC + BMI + TOTCHOL, family = binomial())`. This model allowed us to estimate the weights needed for the Brier score calculation. With the logistic regression models for both men and women defined, we then applied these models to their respective test datasets to obtain predictions. Combining these predictions with the calculated weights, we could estimate the Brier risk score for each subset.
+
+For each of the five imputed datasets, we replicated this process to calculate each of the Brier Risk scores, subsequently averaging these scores to find the score connected to the actual NHANES dataset. In our simulation study, we extended this methodology across 500 simulations. The choice of this number was strategically based on achieving a Standard Error (SE) of the Bias of less than 0.001. We believed that this threshold would offer sufficient precision to accurately gauge the model's bias when using the simulated data. This approach ensured a robust evaluation of the model's performance against the NHANES dataset.
+
+## **3. Results**
+
+The analysis of the non-simulated NHANES dataset provided insightful results regarding the transportability of the CVD prediction models. For the male model, a Brier risk score of 0.0712 was achieved, while the female model demonstrated a Brier risk score of 0.0253. These scores suggest that both models exhibit a high level of transportability to the NHANES data, with the female model performing slightly better. This differential performance may be attributed to various factors, including the nature of the risk factors and their prevalence in each sex or the accuracy of the model in capturing the underlying risk in the population.
+
+Turning our attention to the simulation study, the mean Brier risk scores for the male and female models across all 500 simulations were 0.0776 and 0.0238, respectively. The observed biases were +0.006 for the male model and -0.004 for the female model relative to the non-simulated scores. These biases, while present, are minimal, indicating that the simulated datasets closely approximated the actual NHANES dataset in terms of the predictive transportability of the CVD models.
+
+![](brier_men.jpg){width="370"}
+
+![](brier_women.jpg){width="369"}
+
+The distribution of the estimated Brier risk biases, depicted in the figures above for the male and female model, further corroborates these findings. The distributions suggests a decently strong agreement between the simulated and actual Brier risk scores, reinforcing the notion that the simulated data provides a reliable basis for transportability analysis.
+
+## **4. Limitations**
+
+The simulation study, while yielding promising results, is not without its limitations. A significant constraint stems from the underlying assumptions made during the data generation process. Specifically, we assumed that the NHANES dataset would exhibit intervariable correlations and distributions similar to those found in the Framingham dataset. Although this assumption held reasonably well for most variables, it did not accurately reflect the distribution of ages within the NHANES population, because of this we pivoted to simulating age using a uniform distribution as replacement.
+
+This difference in age distribution, between our study and target population, highlights a potential pitfall of the simulation approach: the validity of our generated synthetic data is contingent upon the extent to which the source and target populations share similar properties. In scenarios where the source study data and the target population differ significantly, the assumption of comparable distributions and correlations may lead to biased or unrealistic simulations. Consequently, this could impact the generalizability and transportability of the findings derived from such simulated data. Moreover, the Framingham cohort may not fully encapsulate the diversity of the broader population represented in NHANES, particularly in terms of ethnicity and socioeconomic factors.
+
+## 5. **Conclusion**
+
+Our study has successfully demonstrated the transportability of cardiovascular disease (CVD) prediction models from the Framingham study to the NHANES population. The non-simulated NHANES data yielded Brier risk scores that show the models' high level of transportability, with the female model exhibiting a marginally superior performance. The simulation study supported these findings, with the mean Brier risk scores from the simulations presenting minimal biases against the true NHANES population, suggesting that the synthetic data approximates the actual NHANES dataset well in terms of generalizability.
+
+However, the simulation study's reliability has several limitations stemming from assumptions in the data generation process. The discrepancy observed in the age distributions between Framingham and NHANES datasets illustrates the caution needed when inferring population-level conclusions from simulated data. The potential for bias introduced by differences between the source and target populations' characteristics highlight the importance of the consideration of demographic diversity in study samples. However despite these limitations, the study shows the utility of transportability analysis using simulation.
+
+## References
+
+1.  Morris, T. P., White, I. R., & Crowther, M. J. (2019). Using simulation studies to evaluate statistical methods. In Statistics in Medicine (Vol. 38, Issue 11, pp. 2074--2102). Wiley. https://doi.org/10.1002/sim.8086
+2.  Mahmood, S. S., Levy, D., Vasan, R. S., & Wang, T. J. (2014). The Framingham Heart Study and the epidemiology of cardiovascular disease: a historical perspective. In The Lancet (Vol. 383, Issue 9921, pp. 999--1008). Elsevier BV. https://doi.org/10.1016/s0140-6736(13)61752-3
+3.  National Center for Health Statistics. (2017). National Health and Nutrition Examination Survey. Retrieved from <https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=2017>
+4.  D'Agostino, R. B., Sr, Vasan, R. S., Pencina, M. J., Wolf, P. A., Cobain, M., Massaro, J. M., & Kannel, W. B. (2008). General Cardiovascular Risk Profile for Use in Primary Care. In Circulation (Vol. 117, Issue 6, pp. 743--753). Ovid Technologies (Wolters Kluwer Health). https://doi.org/10.1161/circulationaha.107.699579
+5.  Steingrimsson, J. A., Gatsonis, C., Li, B., & Dahabreh, I. J. (2022). Transporting a Prediction Model for Use in a New Target Population. In American Journal of Epidemiology (Vol. 192, Issue 2, pp. 296--304). Oxford University Press (OUP). https://doi.org/10.1093/aje/kwac128
+6.  Li, B., Gatsonis, C., Dahabreh, I. J., & Steingrimsson, J. A. (2022). Estimating the area under the ROC curve when transporting a prediction model to a target population. In Biometrics (Vol. 79, Issue 3, pp. 2382--2393). Wiley. https://doi.org/10.1111/biom.13796
