@@ -156,7 +156,7 @@ For each of the five imputed datasets, we replicated this process to calculate e
 
 The analysis of the non-simulated NHANES dataset provided insightful results regarding the transportability of the CVD prediction models. For the male model, a Brier risk score of 0.0712 was achieved, while the female model demonstrated a Brier risk score of 0.0253. These scores suggest that both models exhibit a high level of transportability to the NHANES data, with the female model performing slightly better. This differential performance may be attributed to various factors, including the nature of the risk factors and their prevalence in each sex or the accuracy of the model in capturing the underlying risk in the population.
 
-Turning our attention to the simulation study, the mean Brier risk scores for the male and female models across all 500 simulations were 0.0776 and 0.0238, respectively. The observed biases were +0.006 for the male model and -0.004 for the female model relative to the non-simulated scores. These biases, while present, are minimal, indicating that the simulated datasets closely approximated the actual NHANES dataset in terms of the predictive transportability of the CVD models.
+Turning our attention to the simulation study, the mean Brier risk scores for the male and female models across all 500 simulations were 0.0772 and 0.0213, respectively. The observed biases were +0.006 for the male model and -0.004 for the female model relative to the non-simulated scores. These biases, while present, are minimal, indicating that the simulated datasets closely approximated the actual NHANES dataset in terms of the predictive transportability of the CVD models.
 
 ![](brier_men.jpg){width="370"}
 
